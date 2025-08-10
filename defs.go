@@ -98,6 +98,12 @@ type ReferenceType struct {
 	Type  string `json:"type,omitempty"`
 }
 
+// Name and value only
+type BasicReferenceType struct {
+	Value string `json:"value,omitempty"`
+	Name  string `json:"name,omitempty"`
+}
+
 // TelephoneNumber represents a QuickBooks phone number.
 type TelephoneNumber struct {
 	FreeFormNumber string `json:",omitempty"`
