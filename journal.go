@@ -8,6 +8,13 @@ const (
 	EntityTypeTypeCustomer EntityTypeType = "Customer"
 )
 
+type PostingType string
+
+const (
+	PostingTypeDebit  PostingType = "Debit"
+	PostingTypeCredit PostingType = "Credit"
+)
+
 // Entity type
 type EntityType struct {
 	// Type of the entity.
@@ -17,7 +24,7 @@ type EntityType struct {
 
 type JournalEntryLineItemDetail struct {
 	// Posting type
-	PostingType   *string             `json:"PostingType,omitempty" url:"PostingType,omitempty"`
+	PostingType   *PostingType        `json:"PostingType,omitempty" url:"PostingType,omitempty"`
 	AccountRef    *BasicReferenceType `json:"AccountRef,omitempty" url:"AccountRef,omitempty"`
 	Entity        *EntityType         `json:"Entity,omitempty" url:"Entity,omitempty"`
 	ClassRef      *BasicReferenceType `json:"ClassRef,omitempty" url:"ClassRef,omitempty"`
@@ -63,15 +70,9 @@ type JournalEntry struct {
 	MetaData *MetaData `json:"MetaData,omitempty" url:"MetaData,omitempty"`
 }
 
-type CreateJournalEntryReq struct {
-	JournalCodeRef *BasicReferenceType     `json:"JournalCodeRef,omitempty"`
-	CurrencyRef    *BasicReferenceType     `json:",omitempty"`
-	Line           []*JournalEntryLineItem `json:",omitempty"`
-}
-
 // CreateBill creates the given Bill on the QuickBooks server, returning
 // the resulting Bill object.
-func (c *Client) CreateJournalEntry(req *CreateJournalEntryReq) (*JournalEntry, error) {
+func (c *Client) CreateJournalEntry(req *JournalEntry) (*JournalEntry, error) {
 	var resp struct {
 		JournalEntry JournalEntry
 		Time         Date
