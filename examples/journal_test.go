@@ -36,7 +36,6 @@ func TestCreateJournalEntry(t *testing.T) {
 					JournalEntryLineDetail: &quickbooks.JournalEntryLineItemDetail{
 						PostingType: toPtr(quickbooks.PostingTypeDebit),
 						AccountRef: &quickbooks.BasicReferenceType{
-							Name:  "Opening Bal Equity",
 							Value: "39",
 						},
 					},
@@ -47,7 +46,6 @@ func TestCreateJournalEntry(t *testing.T) {
 					JournalEntryLineDetail: &quickbooks.JournalEntryLineItemDetail{
 						PostingType: toPtr(quickbooks.PostingTypeCredit),
 						AccountRef: &quickbooks.BasicReferenceType{
-							Name:  "Notes Payable",
 							Value: "44",
 						},
 					},
