@@ -103,4 +103,37 @@ func TestCreateBill(t *testing.T) {
 	t.Logf("attachable: %+v", attachable)
 
 	// TODO: need to support creating the bill payment
+	billPayment, err := qbClient.CreateBillPayment(&quickbooks.BillPayment{
+		PrivateNote: "Payment for bill " + bill.DocNumber,
+		VendorRef: quickbooks.ReferenceType{
+			Name:  bill.VendorRef.Name,
+			Value: bill.VendorRef.Value,
+		},
+		TotalAmt: json.Number("103.55"),
+		PayType:  "Check",
+		TxnDate:  quickbooks.Date{Time: time.Now()},
+		CurrencyRef: quickbooks.ReferenceType{
+			Name:  "United States Dollar",
+			Value: "USD",
+		},
+		Line: []quickbooks.BillPaymentLine{
+			{
+				Amount: json.Number("103.55"),
+				LinkedTxn: []quickbooks.LinkedTxn{
+					{
+						TxnID:   bill.Id,
+						TxnType: "Bill",
+					},
+				},
+			},
+		},
+		CheckPayment: &quickbooks.CheckPayment{
+			BankAccountRef: quickbooks.ReferenceType{
+				Value: "35",
+			},
+			PrintStatus: "NotSet",
+		},
+	})
+	require.NoError(t, err)
+	t.Logf("billPayment: %+v", billPayment)
 }
