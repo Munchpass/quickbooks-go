@@ -1,6 +1,7 @@
 package examples
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -26,8 +27,11 @@ func TestCreateJournalEntry(t *testing.T) {
 	qbClient, err := quickbooks.NewClient(clientId, clientSecret, realmId, false, "", &token)
 	require.NoError(t, err)
 
+	ctx := context.Background()
+
 	// Make a request!
 	info, err := qbClient.CreateJournalEntry(
+		ctx,
 		&quickbooks.JournalEntry{
 			TxnDate:   toPtr("2025-06-01"),
 			DocNumber: toPtr("MUN-1000"),

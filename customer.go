@@ -4,6 +4,7 @@
 package quickbooks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,13 +83,13 @@ func (c *Customer) GetPrimaryEmail() string {
 
 // CreateCustomer creates the given Customer on the QuickBooks server,
 // returning the resulting Customer object.
-func (c *Client) CreateCustomer(customer *Customer) (*Customer, error) {
+func (c *Client) CreateCustomer(ctx context.Context, customer *Customer) (*Customer, error) {
 	var resp struct {
 		Customer Customer
 		Time     Date
 	}
 
-	if err := c.post("customer", customer, &resp, nil); err != nil {
+	if err := c.post(ctx, "customer", customer, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -96,7 +97,7 @@ func (c *Client) CreateCustomer(customer *Customer) (*Customer, error) {
 }
 
 // FindCustomers gets the full list of Customers in the QuickBooks account.
-func (c *Client) FindCustomers() ([]Customer, error) {
+func (c *Client) FindCustomers(ctx context.Context) ([]Customer, error) {
 	var resp struct {
 		QueryResponse struct {
 			Customers     []Customer `json:"Customer"`
@@ -106,7 +107,7 @@ func (c *Client) FindCustomers() ([]Customer, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Customer", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Customer", &resp); err != nil {
 		return nil, err
 	}
 
@@ -119,7 +120,7 @@ func (c *Client) FindCustomers() ([]Customer, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Customer ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -134,13 +135,13 @@ func (c *Client) FindCustomers() ([]Customer, error) {
 }
 
 // FindCustomerById returns a customer with a given Id.
-func (c *Client) FindCustomerById(id string) (*Customer, error) {
+func (c *Client) FindCustomerById(ctx context.Context, id string) (*Customer, error) {
 	var r struct {
 		Customer Customer
 		Time     Date
 	}
 
-	if err := c.get("customer/"+id, &r, nil); err != nil {
+	if err := c.get(ctx, "customer/"+id, &r, nil); err != nil {
 		return nil, err
 	}
 
@@ -148,7 +149,7 @@ func (c *Client) FindCustomerById(id string) (*Customer, error) {
 }
 
 // FindCustomerByName gets a customer with a given name.
-func (c *Client) FindCustomerByName(name string) (*Customer, error) {
+func (c *Client) FindCustomerByName(ctx context.Context, name string) (*Customer, error) {
 	var resp struct {
 		QueryResponse struct {
 			Customer   []Customer
@@ -158,7 +159,7 @@ func (c *Client) FindCustomerByName(name string) (*Customer, error) {
 
 	query := "SELECT * FROM Customer WHERE DisplayName = '" + strings.Replace(name, "'", "''", -1) + "'"
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -170,7 +171,7 @@ func (c *Client) FindCustomerByName(name string) (*Customer, error) {
 }
 
 // QueryCustomers accepts an SQL query and returns all customers found using it
-func (c *Client) QueryCustomers(query string) ([]Customer, error) {
+func (c *Client) QueryCustomers(ctx context.Context, query string) ([]Customer, error) {
 	var resp struct {
 		QueryResponse struct {
 			Customers     []Customer `json:"Customer"`
@@ -179,7 +180,7 @@ func (c *Client) QueryCustomers(query string) ([]Customer, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -193,12 +194,12 @@ func (c *Client) QueryCustomers(query string) ([]Customer, error) {
 // UpdateCustomer updates the given Customer on the QuickBooks server,
 // returning the resulting Customer object. It's a sparse update, as not all QB
 // fields are present in our Customer object.
-func (c *Client) UpdateCustomer(customer *Customer) (*Customer, error) {
+func (c *Client) UpdateCustomer(ctx context.Context, customer *Customer) (*Customer, error) {
 	if customer.Id == "" {
 		return nil, errors.New("missing customer id")
 	}
 
-	existingCustomer, err := c.FindCustomerById(customer.Id)
+	existingCustomer, err := c.FindCustomerById(ctx, customer.Id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find existing customer: %v", err)
 	}
@@ -218,7 +219,7 @@ func (c *Client) UpdateCustomer(customer *Customer) (*Customer, error) {
 		Time     Date
 	}
 
-	if err = c.post("customer", payload, &customerData, nil); err != nil {
+	if err = c.post(ctx, "customer", payload, &customerData, nil); err != nil {
 		return nil, err
 	}
 

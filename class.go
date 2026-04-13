@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"errors"
 	"strconv"
 )
@@ -18,7 +19,7 @@ type Class struct {
 }
 
 // FindClasses gets the full list of Classes in the QuickBooks account.
-func (c *Client) FindClasses() ([]Class, error) {
+func (c *Client) FindClasses(ctx context.Context) ([]Class, error) {
 	var resp struct {
 		QueryResponse struct {
 			Classes       []Class `json:"Class"`
@@ -28,7 +29,7 @@ func (c *Client) FindClasses() ([]Class, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Class", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Class", &resp); err != nil {
 		return nil, err
 	}
 
@@ -41,7 +42,7 @@ func (c *Client) FindClasses() ([]Class, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Class ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -56,13 +57,13 @@ func (c *Client) FindClasses() ([]Class, error) {
 }
 
 // FindClassById finds the class by the given id.
-func (c *Client) FindClassById(id string) (*Class, error) {
+func (c *Client) FindClassById(ctx context.Context, id string) (*Class, error) {
 	var resp struct {
 		Class Class
 		Time  Date
 	}
 
-	if err := c.get("class/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "class/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 

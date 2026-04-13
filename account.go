@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -47,13 +48,13 @@ type Account struct {
 }
 
 // CreateAccount creates the given account within QuickBooks
-func (c *Client) CreateAccount(account *Account) (*Account, error) {
+func (c *Client) CreateAccount(ctx context.Context, account *Account) (*Account, error) {
 	var resp struct {
 		Account Account
 		Time    Date
 	}
 
-	if err := c.post("account", account, &resp, nil); err != nil {
+	if err := c.post(ctx, "account", account, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -61,7 +62,7 @@ func (c *Client) CreateAccount(account *Account) (*Account, error) {
 }
 
 // FindAccounts gets the full list of Accounts in the QuickBooks account.
-func (c *Client) FindAccounts() ([]Account, error) {
+func (c *Client) FindAccounts(ctx context.Context) ([]Account, error) {
 	var resp struct {
 		QueryResponse struct {
 			Accounts      []Account `json:"Account"`
@@ -71,7 +72,7 @@ func (c *Client) FindAccounts() ([]Account, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Account", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Account", &resp); err != nil {
 		return nil, err
 	}
 
@@ -84,7 +85,7 @@ func (c *Client) FindAccounts() ([]Account, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Account ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -99,13 +100,13 @@ func (c *Client) FindAccounts() ([]Account, error) {
 }
 
 // FindAccountById returns an account with a given Id.
-func (c *Client) FindAccountById(id string) (*Account, error) {
+func (c *Client) FindAccountById(ctx context.Context, id string) (*Account, error) {
 	var resp struct {
 		Account Account
 		Time    Date
 	}
 
-	if err := c.get("account/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "account/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +114,7 @@ func (c *Client) FindAccountById(id string) (*Account, error) {
 }
 
 // QueryAccounts accepts an SQL query and returns all accounts found using it
-func (c *Client) QueryAccounts(query string) ([]Account, error) {
+func (c *Client) QueryAccounts(ctx context.Context, query string) ([]Account, error) {
 	var resp struct {
 		QueryResponse struct {
 			Accounts      []Account `json:"Account"`
@@ -122,7 +123,7 @@ func (c *Client) QueryAccounts(query string) ([]Account, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -134,12 +135,12 @@ func (c *Client) QueryAccounts(query string) ([]Account, error) {
 }
 
 // UpdateAccount updates the account
-func (c *Client) UpdateAccount(account *Account) (*Account, error) {
+func (c *Client) UpdateAccount(ctx context.Context, account *Account) (*Account, error) {
 	if account.Id == "" {
 		return nil, errors.New("missing account id")
 	}
 
-	existingAccount, err := c.FindAccountById(account.Id)
+	existingAccount, err := c.FindAccountById(ctx, account.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +160,7 @@ func (c *Client) UpdateAccount(account *Account) (*Account, error) {
 		Time    Date
 	}
 
-	if err = c.post("account", payload, &accountData, nil); err != nil {
+	if err = c.post(ctx, "account", payload, &accountData, nil); err != nil {
 		return nil, err
 	}
 

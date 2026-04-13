@@ -1,6 +1,7 @@
 package examples
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -21,8 +22,10 @@ func TestReuseToken(t *testing.T) {
 	qbClient, err := quickbooks.NewClient(clientId, clientSecret, realmId, false, "", &token)
 	require.NoError(t, err)
 
+	ctx := context.Background()
+
 	// Make a request!
-	info, err := qbClient.FindCompanyInfo()
+	info, err := qbClient.FindCompanyInfo(ctx)
 	require.NoError(t, err)
 	fmt.Println(info)
 }

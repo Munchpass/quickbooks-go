@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"errors"
 	"strconv"
 )
@@ -25,13 +26,13 @@ type PaymentLine struct {
 }
 
 // CreatePayment creates the given payment within QuickBooks.
-func (c *Client) CreatePayment(payment *Payment) (*Payment, error) {
+func (c *Client) CreatePayment(ctx context.Context, payment *Payment) (*Payment, error) {
 	var resp struct {
 		Payment Payment
 		Time    Date
 	}
 
-	if err := c.post("payment", payment, &resp, nil); err != nil {
+	if err := c.post(ctx, "payment", payment, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -39,16 +40,16 @@ func (c *Client) CreatePayment(payment *Payment) (*Payment, error) {
 }
 
 // DeletePayment deletes the given payment from QuickBooks.
-func (c *Client) DeletePayment(payment *Payment) error {
+func (c *Client) DeletePayment(ctx context.Context, payment *Payment) error {
 	if payment.Id == "" || payment.SyncToken == "" {
 		return errors.New("missing id/sync token")
 	}
 
-	return c.post("payment", payment, nil, map[string]string{"operation": "delete"})
+	return c.post(ctx, "payment", payment, nil, map[string]string{"operation": "delete"})
 }
 
 // FindPayments gets the full list of Payments in the QuickBooks account.
-func (c *Client) FindPayments() ([]Payment, error) {
+func (c *Client) FindPayments(ctx context.Context) ([]Payment, error) {
 	var resp struct {
 		QueryResponse struct {
 			Payments      []Payment `json:"Payment"`
@@ -58,7 +59,7 @@ func (c *Client) FindPayments() ([]Payment, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Payment", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Payment", &resp); err != nil {
 		return nil, err
 	}
 
@@ -71,7 +72,7 @@ func (c *Client) FindPayments() ([]Payment, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Payment ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -86,13 +87,13 @@ func (c *Client) FindPayments() ([]Payment, error) {
 }
 
 // FindPaymentById returns an payment with a given Id.
-func (c *Client) FindPaymentById(id string) (*Payment, error) {
+func (c *Client) FindPaymentById(ctx context.Context, id string) (*Payment, error) {
 	var resp struct {
 		Payment Payment
 		Time    Date
 	}
 
-	if err := c.get("payment/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "payment/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -100,7 +101,7 @@ func (c *Client) FindPaymentById(id string) (*Payment, error) {
 }
 
 // QueryPayments accepts a SQL query and returns all payments found using it.
-func (c *Client) QueryPayments(query string) ([]Payment, error) {
+func (c *Client) QueryPayments(ctx context.Context, query string) ([]Payment, error) {
 	var resp struct {
 		QueryResponse struct {
 			Payments      []Payment `json:"Payment"`
@@ -109,7 +110,7 @@ func (c *Client) QueryPayments(query string) ([]Payment, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -121,12 +122,12 @@ func (c *Client) QueryPayments(query string) ([]Payment, error) {
 }
 
 // UpdatePayment updates the given payment in QuickBooks.
-func (c *Client) UpdatePayment(payment *Payment) (*Payment, error) {
+func (c *Client) UpdatePayment(ctx context.Context, payment *Payment) (*Payment, error) {
 	if payment.Id == "" {
 		return nil, errors.New("missing payment id")
 	}
 
-	existingPayment, err := c.FindPaymentById(payment.Id)
+	existingPayment, err := c.FindPaymentById(ctx, payment.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +147,7 @@ func (c *Client) UpdatePayment(payment *Payment) (*Payment, error) {
 		Time    Date
 	}
 
-	if err = c.post("payment", payload, &paymentData, nil); err != nil {
+	if err = c.post(ctx, "payment", payload, &paymentData, nil); err != nil {
 		return nil, err
 	}
 
@@ -154,17 +155,17 @@ func (c *Client) UpdatePayment(payment *Payment) (*Payment, error) {
 }
 
 // VoidPayment voids the given payment in QuickBooks.
-func (c *Client) VoidPayment(payment Payment) error {
+func (c *Client) VoidPayment(ctx context.Context, payment Payment) error {
 	if payment.Id == "" {
 		return errors.New("missing payment id")
 	}
 
-	existingPayment, err := c.FindPaymentById(payment.Id)
+	existingPayment, err := c.FindPaymentById(ctx, payment.Id)
 	if err != nil {
 		return err
 	}
 
 	payment.SyncToken = existingPayment.SyncToken
 
-	return c.post("payment", payment, nil, map[string]string{"operation": "update", "include": "void"})
+	return c.post(ctx, "payment", payment, nil, map[string]string{"operation": "update", "include": "void"})
 }

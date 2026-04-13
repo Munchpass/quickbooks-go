@@ -1,6 +1,7 @@
 package examples
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -16,22 +17,24 @@ func TestAuthorizationFlow(t *testing.T) {
 	qbClient, err := quickbooks.NewClient(clientId, clientSecret, realmId, false, "", nil)
 	require.NoError(t, err)
 
+	ctx := context.Background()
+
 	// To do first when you receive the authorization code from quickbooks callback
 	authorizationCode := "<received-from-callback>"
 	redirectURI := "https://developer.intuit.com/v2/OAuth2Playground/RedirectUrl"
-	bearerToken, err := qbClient.RetrieveBearerToken(authorizationCode, redirectURI)
+	bearerToken, err := qbClient.RetrieveBearerToken(ctx, authorizationCode, redirectURI)
 	require.NoError(t, err)
 	// Save the bearer token inside a db
 
 	// When the token expire, you can use the following function
-	bearerToken, err = qbClient.RefreshToken(bearerToken.RefreshToken)
+	bearerToken, err = qbClient.RefreshToken(ctx, bearerToken.RefreshToken)
 	require.NoError(t, err)
 
 	// Make a request!
-	info, err := qbClient.FindCompanyInfo()
+	info, err := qbClient.FindCompanyInfo(ctx)
 	require.NoError(t, err)
 	fmt.Println(info)
 
 	// Revoke the token, this should be done only if a user unsubscribe from your app
-	require.NoError(t, qbClient.RevokeToken(bearerToken.RefreshToken))
+	require.NoError(t, qbClient.RevokeToken(ctx, bearerToken.RefreshToken))
 }
