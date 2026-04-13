@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // Failure is the outermost struct that holds an error response.
@@ -34,6 +35,16 @@ func (f Failure) Error() string {
 	}
 
 	return string(text)
+}
+
+// RateLimitError is returned when the QuickBooks API responds with HTTP 429.
+// RetryAfter contains the server-suggested wait duration before retrying.
+type RateLimitError struct {
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("rate limited by QuickBooks API (retry after %s)", e.RetryAfter)
 }
 
 // parseFailure takes a response reader and tries to parse a Failure.

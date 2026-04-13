@@ -98,16 +98,12 @@ func (c *Client) DownloadAttachable(id string) (string, error) {
 	urlValues.Add("minorversion", c.minorVersion)
 	endpointUrl.RawQuery = urlValues.Encode()
 
-	req, err := http.NewRequest("GET", endpointUrl.String(), nil)
+	resp, err := c.doWithThrottle(func() (*http.Request, error) {
+		return http.NewRequest("GET", endpointUrl.String(), nil)
+	})
 	if err != nil {
 		return "", err
 	}
-
-	resp, err := c.Client.Do(req)
-	if err != nil {
-		return "", err
-	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -275,19 +271,21 @@ func (c *Client) UploadAttachable(attachable *Attachable, data io.Reader) (*Atta
 
 	mWriter.Close()
 
-	req, err := http.NewRequest("POST", endpointUrl.String(), &buffer)
+	bodyBytes := buffer.Bytes()
+	contentType := mWriter.FormDataContentType()
+
+	resp, err := c.doWithThrottle(func() (*http.Request, error) {
+		r, err := http.NewRequest("POST", endpointUrl.String(), bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+		r.Header.Add("Content-Type", contentType)
+		r.Header.Add("Accept", "application/json")
+		return r, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	req.Header.Add("Content-Type", mWriter.FormDataContentType())
-	req.Header.Add("Accept", "application/json")
-
-	resp, err := c.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
