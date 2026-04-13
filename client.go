@@ -5,14 +5,19 @@ package quickbooks
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"sync"
 	"time"
 )
 
 // Client is your handle to the QuickBooks API.
+//
+// By default, rate-limited (HTTP 429) responses return a *RateLimitError
+// immediately with the server's Retry-After duration. Call SetMaxRetries to
+// enable automatic retry with backoff.
 type Client struct {
 	// Get this from oauth2.NewClient().
 	Client *http.Client
@@ -28,8 +33,14 @@ type Client struct {
 	minorVersion string
 	// The account Id you're connecting to.
 	realmId string
-	// Flag set if the limit of 500req/s has been hit (source: https://developer.intuit.com/app/developer/qbo/docs/learn/rest-api-features#limits-and-throttles)
-	throttled bool
+
+	// Rate-limit state, protected by throttleMu.
+	throttleMu     sync.Mutex
+	throttledUntil time.Time
+
+	// Maximum number of automatic retries on HTTP 429. Zero (default) means
+	// no retries — a *RateLimitError is returned immediately.
+	maxRetries int
 }
 
 // NewClient initializes a new QuickBooks client for interacting with their Online API
@@ -43,7 +54,6 @@ func NewClient(clientId string, clientSecret string, realmId string, isProductio
 		clientSecret: clientSecret,
 		minorVersion: minorVersion,
 		realmId:      realmId,
-		throttled:    false,
 	}
 
 	if isProduction {
@@ -99,12 +109,63 @@ func (c *Client) FindAuthorizationUrl(scope string, state string, redirectUri st
 	return authorizationUrl.String(), nil
 }
 
-func (c *Client) req(method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
-	// TODO: possibly just wait until c.throttled is false, and continue the request?
-	if c.throttled {
-		return errors.New("waiting for rate limit")
+// SetMaxRetries configures the maximum number of automatic retries for
+// rate-limited (HTTP 429) requests. The default is 0, meaning no retries —
+// a *RateLimitError is returned immediately with the server's Retry-After
+// duration so callers can handle backoff themselves.
+//
+// When maxRetries > 0, the client sleeps for the Retry-After duration
+// (defaulting to 60s, capped at 2 minutes) between attempts.
+func (c *Client) SetMaxRetries(n int) {
+	if n < 0 {
+		n = 0
 	}
+	c.maxRetries = n
+}
 
+const (
+	defaultRetryAfter = 60 * time.Second
+	maxRetryAfter     = 2 * time.Minute
+)
+
+// waitForThrottle blocks until the current throttle window expires.
+func (c *Client) waitForThrottle() {
+	c.throttleMu.Lock()
+	until := c.throttledUntil
+	c.throttleMu.Unlock()
+
+	if d := time.Until(until); d > 0 {
+		time.Sleep(d)
+	}
+}
+
+// setThrottledUntil records when the throttle expires.
+func (c *Client) setThrottledUntil(t time.Time) {
+	c.throttleMu.Lock()
+	if t.After(c.throttledUntil) {
+		c.throttledUntil = t
+	}
+	c.throttleMu.Unlock()
+}
+
+// parseRetryAfter reads the Retry-After header and returns a clamped duration.
+func parseRetryAfter(resp *http.Response) time.Duration {
+	raw := resp.Header.Get("Retry-After")
+	if raw == "" {
+		return defaultRetryAfter
+	}
+	secs, err := strconv.Atoi(raw)
+	if err != nil || secs <= 0 {
+		return defaultRetryAfter
+	}
+	d := time.Duration(secs) * time.Second
+	if d > maxRetryAfter {
+		d = maxRetryAfter
+	}
+	return d
+}
+
+func (c *Client) req(method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
 	endpointUrl := *c.endpoint
 	endpointUrl.Path += endpoint
 	urlValues := url.Values{}
@@ -116,54 +177,97 @@ func (c *Client) req(method string, endpoint string, payloadData interface{}, re
 	}
 
 	urlValues.Set("minorversion", c.minorVersion)
-	urlValues.Encode()
 	endpointUrl.RawQuery = urlValues.Encode()
 
-	var err error
 	var marshalledJson []byte
-
 	if payloadData != nil {
+		var err error
 		marshalledJson, err = json.Marshal(payloadData)
 		if err != nil {
 			return fmt.Errorf("failed to marshal payload: %v", err)
 		}
 	}
 
-	req, err := http.NewRequest(method, endpointUrl.String(), bytes.NewBuffer(marshalledJson))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
-	}
+	attempts := 1 + c.maxRetries
+	for attempt := 0; attempt < attempts; attempt++ {
+		c.waitForThrottle()
 
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Content-Type", "application/json")
-
-	resp, err := c.Client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to make request: %v", err)
-	}
-
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		break
-	case http.StatusTooManyRequests:
-		c.throttled = true
-		go func(c *Client) {
-			time.Sleep(1 * time.Minute)
-			c.throttled = false
-		}(c)
-	default:
-		return parseFailure(resp)
-	}
-
-	if responseObject != nil {
-		if err = json.NewDecoder(resp.Body).Decode(&responseObject); err != nil {
-			return fmt.Errorf("failed to unmarshal response into object: %v", err)
+		req, err := http.NewRequest(method, endpointUrl.String(), bytes.NewBuffer(marshalledJson))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %v", err)
 		}
+		req.Header.Add("Accept", "application/json")
+		req.Header.Add("Content-Type", "application/json")
+
+		resp, err := c.Client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to make request: %v", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter := parseRetryAfter(resp)
+			c.setThrottledUntil(time.Now().Add(retryAfter))
+			resp.Body.Close()
+
+			if attempt+1 < attempts {
+				time.Sleep(retryAfter)
+				continue
+			}
+			return &RateLimitError{RetryAfter: retryAfter}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return parseFailure(resp)
+		}
+
+		if responseObject != nil {
+			if err = json.NewDecoder(resp.Body).Decode(&responseObject); err != nil {
+				return fmt.Errorf("failed to unmarshal response into object: %v", err)
+			}
+		}
+		return nil
 	}
 
-	return nil
+	return &RateLimitError{RetryAfter: defaultRetryAfter}
+}
+
+// doWithThrottle executes an HTTP request with rate-limit awareness and
+// optional retry. It is used by paths that cannot go through req() (e.g.
+// multipart uploads). The caller provides a buildReq function that constructs
+// a fresh *http.Request for each attempt (the body may be consumed on retry).
+func (c *Client) doWithThrottle(buildReq func() (*http.Request, error)) (*http.Response, error) {
+	attempts := 1 + c.maxRetries
+	for attempt := 0; attempt < attempts; attempt++ {
+		c.waitForThrottle()
+
+		req, err := buildReq()
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.Client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make request: %v", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter := parseRetryAfter(resp)
+			c.setThrottledUntil(time.Now().Add(retryAfter))
+			resp.Body.Close()
+
+			if attempt+1 < attempts {
+				time.Sleep(retryAfter)
+				continue
+			}
+			return nil, &RateLimitError{RetryAfter: retryAfter}
+		}
+
+		return resp, nil
+	}
+
+	return nil, &RateLimitError{RetryAfter: defaultRetryAfter}
 }
 
 func (c *Client) get(endpoint string, responseObject interface{}, queryParameters map[string]string) error {
