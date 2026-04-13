@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -41,6 +40,9 @@ type Client struct {
 	// Maximum number of automatic retries on HTTP 429. Zero (default) means
 	// no retries — a *RateLimitError is returned immediately.
 	maxRetries int
+
+	// Delay between retries on HTTP 429. Defaults to defaultRetryDelay.
+	retryDelay time.Duration
 }
 
 // NewClient initializes a new QuickBooks client for interacting with their Online API
@@ -111,11 +113,11 @@ func (c *Client) FindAuthorizationUrl(scope string, state string, redirectUri st
 
 // SetMaxRetries configures the maximum number of automatic retries for
 // rate-limited (HTTP 429) requests. The default is 0, meaning no retries —
-// a *RateLimitError is returned immediately with the server's Retry-After
-// duration so callers can handle backoff themselves.
+// a *RateLimitError is returned immediately so callers can handle backoff
+// themselves.
 //
-// When maxRetries > 0, the client sleeps for the Retry-After duration
-// (defaulting to 60s, capped at 2 minutes) between attempts.
+// When maxRetries > 0, the client sleeps for the configured retry delay
+// (see SetRetryDelay, default 1 minute) between attempts.
 func (c *Client) SetMaxRetries(n int) {
 	if n < 0 {
 		n = 0
@@ -123,10 +125,26 @@ func (c *Client) SetMaxRetries(n int) {
 	c.maxRetries = n
 }
 
-const (
-	defaultRetryAfter = 60 * time.Second
-	maxRetryAfter     = 2 * time.Minute
-)
+// SetRetryDelay configures the delay between retry attempts when the
+// QuickBooks API returns HTTP 429. The default is 1 minute. This delay is
+// also used as the throttle window — subsequent requests made before the
+// delay elapses will wait for the remaining duration.
+func (c *Client) SetRetryDelay(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	c.retryDelay = d
+}
+
+const defaultRetryDelay = 60 * time.Second
+
+// effectiveRetryDelay returns the configured retry delay or the default.
+func (c *Client) effectiveRetryDelay() time.Duration {
+	if c.retryDelay > 0 {
+		return c.retryDelay
+	}
+	return defaultRetryDelay
+}
 
 // waitForThrottle blocks until the current throttle window expires.
 func (c *Client) waitForThrottle() {
@@ -146,23 +164,6 @@ func (c *Client) setThrottledUntil(t time.Time) {
 		c.throttledUntil = t
 	}
 	c.throttleMu.Unlock()
-}
-
-// parseRetryAfter reads the Retry-After header and returns a clamped duration.
-func parseRetryAfter(resp *http.Response) time.Duration {
-	raw := resp.Header.Get("Retry-After")
-	if raw == "" {
-		return defaultRetryAfter
-	}
-	secs, err := strconv.Atoi(raw)
-	if err != nil || secs <= 0 {
-		return defaultRetryAfter
-	}
-	d := time.Duration(secs) * time.Second
-	if d > maxRetryAfter {
-		d = maxRetryAfter
-	}
-	return d
 }
 
 func (c *Client) req(method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
@@ -205,15 +206,15 @@ func (c *Client) req(method string, endpoint string, payloadData interface{}, re
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			retryAfter := parseRetryAfter(resp)
-			c.setThrottledUntil(time.Now().Add(retryAfter))
+			delay := c.effectiveRetryDelay()
+			c.setThrottledUntil(time.Now().Add(delay))
 			resp.Body.Close()
 
 			if attempt+1 < attempts {
-				time.Sleep(retryAfter)
+				time.Sleep(delay)
 				continue
 			}
-			return &RateLimitError{RetryAfter: retryAfter}
+			return &RateLimitError{}
 		}
 
 		defer resp.Body.Close()
@@ -230,7 +231,7 @@ func (c *Client) req(method string, endpoint string, payloadData interface{}, re
 		return nil
 	}
 
-	return &RateLimitError{RetryAfter: defaultRetryAfter}
+	return &RateLimitError{}
 }
 
 // doWithThrottle executes an HTTP request with rate-limit awareness and
@@ -253,21 +254,21 @@ func (c *Client) doWithThrottle(buildReq func() (*http.Request, error)) (*http.R
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			retryAfter := parseRetryAfter(resp)
-			c.setThrottledUntil(time.Now().Add(retryAfter))
+			delay := c.effectiveRetryDelay()
+			c.setThrottledUntil(time.Now().Add(delay))
 			resp.Body.Close()
 
 			if attempt+1 < attempts {
-				time.Sleep(retryAfter)
+				time.Sleep(delay)
 				continue
 			}
-			return nil, &RateLimitError{RetryAfter: retryAfter}
+			return nil, &RateLimitError{}
 		}
 
 		return resp, nil
 	}
 
-	return nil, &RateLimitError{RetryAfter: defaultRetryAfter}
+	return nil, &RateLimitError{}
 }
 
 func (c *Client) get(endpoint string, responseObject interface{}, queryParameters map[string]string) error {

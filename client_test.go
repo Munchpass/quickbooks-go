@@ -29,7 +29,6 @@ func newTestClient(t *testing.T, serverURL string) *Client {
 
 func TestReq_429_NoRetries_ReturnsRateLimitError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Retry-After", "42")
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer srv.Close()
@@ -46,53 +45,6 @@ func TestReq_429_NoRetries_ReturnsRateLimitError(t *testing.T) {
 	if !errors.As(err, &rlErr) {
 		t.Fatalf("expected *RateLimitError, got %T: %v", err, err)
 	}
-
-	if rlErr.RetryAfter != 42*time.Second {
-		t.Errorf("RetryAfter = %v, want 42s", rlErr.RetryAfter)
-	}
-}
-
-func TestReq_429_DefaultRetryAfter(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-
-	var resp struct{}
-	err := c.req("GET", "reports/ProfitAndLoss", nil, &resp, nil)
-
-	var rlErr *RateLimitError
-	if !errors.As(err, &rlErr) {
-		t.Fatalf("expected *RateLimitError, got %T: %v", err, err)
-	}
-
-	if rlErr.RetryAfter != defaultRetryAfter {
-		t.Errorf("RetryAfter = %v, want %v", rlErr.RetryAfter, defaultRetryAfter)
-	}
-}
-
-func TestReq_429_RetryAfterCapped(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Retry-After", "999")
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer srv.Close()
-
-	c := newTestClient(t, srv.URL)
-
-	var resp struct{}
-	err := c.req("GET", "reports/ProfitAndLoss", nil, &resp, nil)
-
-	var rlErr *RateLimitError
-	if !errors.As(err, &rlErr) {
-		t.Fatalf("expected *RateLimitError, got %T: %v", err, err)
-	}
-
-	if rlErr.RetryAfter != maxRetryAfter {
-		t.Errorf("RetryAfter = %v, want %v (capped)", rlErr.RetryAfter, maxRetryAfter)
-	}
 }
 
 func TestReq_429_WithRetries_SucceedsOnSecondAttempt(t *testing.T) {
@@ -100,7 +52,6 @@ func TestReq_429_WithRetries_SucceedsOnSecondAttempt(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&calls, 1)
 		if n == 1 {
-			w.Header().Set("Retry-After", "1")
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
@@ -111,6 +62,7 @@ func TestReq_429_WithRetries_SucceedsOnSecondAttempt(t *testing.T) {
 
 	c := newTestClient(t, srv.URL)
 	c.SetMaxRetries(2)
+	c.SetRetryDelay(10 * time.Millisecond)
 
 	var resp map[string]string
 	err := c.req("GET", "test", nil, &resp, nil)
@@ -131,13 +83,13 @@ func TestReq_429_WithRetries_ExhaustsRetries(t *testing.T) {
 	var calls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
-		w.Header().Set("Retry-After", "1")
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
 	c.SetMaxRetries(1)
+	c.SetRetryDelay(10 * time.Millisecond)
 
 	var resp struct{}
 	err := c.req("GET", "test", nil, &resp, nil)
@@ -152,12 +104,49 @@ func TestReq_429_WithRetries_ExhaustsRetries(t *testing.T) {
 	}
 }
 
+func TestReq_429_RetrySleepsForConfiguredDelay(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	c.SetMaxRetries(1)
+	c.SetRetryDelay(100 * time.Millisecond)
+
+	start := time.Now()
+	var resp map[string]string
+	err := c.req("GET", "test", nil, &resp, nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if elapsed < 80*time.Millisecond {
+		t.Errorf("retry happened too fast (%v), expected ~100ms delay", elapsed)
+	}
+}
+
+func TestReq_429_DefaultRetryDelayUsed(t *testing.T) {
+	c := &Client{}
+	if got := c.effectiveRetryDelay(); got != defaultRetryDelay {
+		t.Errorf("effectiveRetryDelay() = %v, want %v", got, defaultRetryDelay)
+	}
+}
+
 func TestReq_429_ConcurrentRequestsNoRace(t *testing.T) {
 	var calls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&calls, 1)
 		if n <= 3 {
-			w.Header().Set("Retry-After", "1")
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
@@ -168,6 +157,7 @@ func TestReq_429_ConcurrentRequestsNoRace(t *testing.T) {
 
 	c := newTestClient(t, srv.URL)
 	c.SetMaxRetries(3)
+	c.SetRetryDelay(10 * time.Millisecond)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
@@ -189,9 +179,16 @@ func TestSetMaxRetries_NegativeClampedToZero(t *testing.T) {
 	}
 }
 
+func TestSetRetryDelay_NegativeClampedToZero(t *testing.T) {
+	c := &Client{}
+	c.SetRetryDelay(-1 * time.Second)
+	if c.retryDelay != 0 {
+		t.Errorf("retryDelay = %v, want 0", c.retryDelay)
+	}
+}
+
 func TestDoWithThrottle_429_ReturnsRateLimitError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Retry-After", "30")
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer srv.Close()
@@ -205,9 +202,5 @@ func TestDoWithThrottle_429_ReturnsRateLimitError(t *testing.T) {
 	var rlErr *RateLimitError
 	if !errors.As(err, &rlErr) {
 		t.Fatalf("expected *RateLimitError, got %T: %v", err, err)
-	}
-
-	if rlErr.RetryAfter != 30*time.Second {
-		t.Errorf("RetryAfter = %v, want 30s", rlErr.RetryAfter)
 	}
 }
