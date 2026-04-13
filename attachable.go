@@ -2,6 +2,7 @@ package quickbooks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,7 +99,7 @@ func (c *Client) DownloadAttachable(id string) (string, error) {
 	urlValues.Add("minorversion", c.minorVersion)
 	endpointUrl.RawQuery = urlValues.Encode()
 
-	resp, err := c.doWithThrottle(func() (*http.Request, error) {
+	resp, err := c.doWithThrottle(context.Background(), func() (*http.Request, error) {
 		return http.NewRequest("GET", endpointUrl.String(), nil)
 	})
 	if err != nil {
@@ -274,7 +275,7 @@ func (c *Client) UploadAttachable(attachable *Attachable, data io.Reader) (*Atta
 	bodyBytes := buffer.Bytes()
 	contentType := mWriter.FormDataContentType()
 
-	resp, err := c.doWithThrottle(func() (*http.Request, error) {
+	resp, err := c.doWithThrottle(context.Background(), func() (*http.Request, error) {
 		r, err := http.NewRequest("POST", endpointUrl.String(), bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, err

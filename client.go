@@ -4,19 +4,21 @@ package quickbooks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // Client is your handle to the QuickBooks API.
 //
 // By default, rate-limited (HTTP 429) responses return a *RateLimitError
-// immediately with the server's Retry-After duration. Call SetMaxRetries to
-// enable automatic retry with backoff.
+// immediately. Call SetMaxRetries to enable automatic retry, and
+// SetRetryDelay to configure the wait between attempts (default 1 minute).
 type Client struct {
 	// Get this from oauth2.NewClient().
 	Client *http.Client
@@ -39,10 +41,12 @@ type Client struct {
 
 	// Maximum number of automatic retries on HTTP 429. Zero (default) means
 	// no retries — a *RateLimitError is returned immediately.
-	maxRetries int
+	// Accessed atomically.
+	maxRetries atomic.Int32
 
 	// Delay between retries on HTTP 429. Defaults to defaultRetryDelay.
-	retryDelay time.Duration
+	// Stored as nanoseconds; accessed atomically.
+	retryDelayNs atomic.Int64
 }
 
 // NewClient initializes a new QuickBooks client for interacting with their Online API
@@ -117,43 +121,68 @@ func (c *Client) FindAuthorizationUrl(scope string, state string, redirectUri st
 // themselves.
 //
 // When maxRetries > 0, the client sleeps for the configured retry delay
-// (see SetRetryDelay, default 1 minute) between attempts.
+// (see SetRetryDelay, default 1 minute) between attempts. Safe for
+// concurrent use.
 func (c *Client) SetMaxRetries(n int) {
 	if n < 0 {
 		n = 0
 	}
-	c.maxRetries = n
+	c.maxRetries.Store(int32(n))
 }
 
 // SetRetryDelay configures the delay between retry attempts when the
 // QuickBooks API returns HTTP 429. The default is 1 minute. This delay is
 // also used as the throttle window — subsequent requests made before the
-// delay elapses will wait for the remaining duration.
+// delay elapses will wait for the remaining duration. Safe for concurrent
+// use.
 func (c *Client) SetRetryDelay(d time.Duration) {
 	if d < 0 {
 		d = 0
 	}
-	c.retryDelay = d
+	c.retryDelayNs.Store(int64(d))
 }
 
 const defaultRetryDelay = 60 * time.Second
 
 // effectiveRetryDelay returns the configured retry delay or the default.
 func (c *Client) effectiveRetryDelay() time.Duration {
-	if c.retryDelay > 0 {
-		return c.retryDelay
+	if ns := c.retryDelayNs.Load(); ns > 0 {
+		return time.Duration(ns)
 	}
 	return defaultRetryDelay
 }
 
-// waitForThrottle blocks until the current throttle window expires.
-func (c *Client) waitForThrottle() {
+// waitForThrottle blocks until the current throttle window expires or ctx is
+// cancelled, whichever comes first. Returns ctx.Err() if cancelled.
+func (c *Client) waitForThrottle(ctx context.Context) error {
 	c.throttleMu.Lock()
 	until := c.throttledUntil
 	c.throttleMu.Unlock()
 
-	if d := time.Until(until); d > 0 {
-		time.Sleep(d)
+	d := time.Until(until)
+	if d <= 0 {
+		return nil
+	}
+
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// sleepWithContext sleeps for the given duration or until ctx is cancelled.
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
 	}
 }
 
@@ -167,6 +196,10 @@ func (c *Client) setThrottledUntil(t time.Time) {
 }
 
 func (c *Client) req(method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
+	return c.reqCtx(context.Background(), method, endpoint, payloadData, responseObject, queryParameters)
+}
+
+func (c *Client) reqCtx(ctx context.Context, method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
 	endpointUrl := *c.endpoint
 	endpointUrl.Path += endpoint
 	urlValues := url.Values{}
@@ -189,11 +222,13 @@ func (c *Client) req(method string, endpoint string, payloadData interface{}, re
 		}
 	}
 
-	attempts := 1 + c.maxRetries
+	attempts := 1 + int(c.maxRetries.Load())
 	for attempt := 0; attempt < attempts; attempt++ {
-		c.waitForThrottle()
+		if err := c.waitForThrottle(ctx); err != nil {
+			return err
+		}
 
-		req, err := http.NewRequest(method, endpointUrl.String(), bytes.NewBuffer(marshalledJson))
+		req, err := http.NewRequestWithContext(ctx, method, endpointUrl.String(), bytes.NewBuffer(marshalledJson))
 		if err != nil {
 			return fmt.Errorf("failed to create request: %v", err)
 		}
@@ -211,23 +246,27 @@ func (c *Client) req(method string, endpoint string, payloadData interface{}, re
 			resp.Body.Close()
 
 			if attempt+1 < attempts {
-				time.Sleep(delay)
+				if err := sleepWithContext(ctx, delay); err != nil {
+					return err
+				}
 				continue
 			}
 			return &RateLimitError{}
 		}
 
-		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
-			return parseFailure(resp)
+			err := parseFailure(resp)
+			resp.Body.Close()
+			return err
 		}
 
 		if responseObject != nil {
 			if err = json.NewDecoder(resp.Body).Decode(&responseObject); err != nil {
+				resp.Body.Close()
 				return fmt.Errorf("failed to unmarshal response into object: %v", err)
 			}
 		}
+		resp.Body.Close()
 		return nil
 	}
 
@@ -238,10 +277,12 @@ func (c *Client) req(method string, endpoint string, payloadData interface{}, re
 // optional retry. It is used by paths that cannot go through req() (e.g.
 // multipart uploads). The caller provides a buildReq function that constructs
 // a fresh *http.Request for each attempt (the body may be consumed on retry).
-func (c *Client) doWithThrottle(buildReq func() (*http.Request, error)) (*http.Response, error) {
-	attempts := 1 + c.maxRetries
+func (c *Client) doWithThrottle(ctx context.Context, buildReq func() (*http.Request, error)) (*http.Response, error) {
+	attempts := 1 + int(c.maxRetries.Load())
 	for attempt := 0; attempt < attempts; attempt++ {
-		c.waitForThrottle()
+		if err := c.waitForThrottle(ctx); err != nil {
+			return nil, err
+		}
 
 		req, err := buildReq()
 		if err != nil {
@@ -259,7 +300,9 @@ func (c *Client) doWithThrottle(buildReq func() (*http.Request, error)) (*http.R
 			resp.Body.Close()
 
 			if attempt+1 < attempts {
-				time.Sleep(delay)
+				if err := sleepWithContext(ctx, delay); err != nil {
+					return nil, err
+				}
 				continue
 			}
 			return nil, &RateLimitError{}
