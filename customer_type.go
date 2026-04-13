@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"errors"
 )
 
@@ -14,13 +15,13 @@ type CustomerType struct {
 }
 
 // FindCustomerTypeById returns a customerType with a given Id.
-func (c *Client) FindCustomerTypeById(id string) (*CustomerType, error) {
+func (c *Client) FindCustomerTypeById(ctx context.Context, id string) (*CustomerType, error) {
 	var r struct {
 		CustomerType CustomerType
 		Time         Date
 	}
 
-	if err := c.get("customertype/"+id, &r, nil); err != nil {
+	if err := c.get(ctx, "customertype/"+id, &r, nil); err != nil {
 		return nil, err
 	}
 
@@ -28,7 +29,7 @@ func (c *Client) FindCustomerTypeById(id string) (*CustomerType, error) {
 }
 
 // QueryCustomerTypes accepts an SQL query and returns all customerTypes found using it
-func (c *Client) QueryCustomerTypes(query string) ([]CustomerType, error) {
+func (c *Client) QueryCustomerTypes(ctx context.Context, query string) ([]CustomerType, error) {
 	var resp struct {
 		QueryResponse struct {
 			CustomerTypes []CustomerType `json:"CustomerType"`
@@ -37,7 +38,7 @@ func (c *Client) QueryCustomerTypes(query string) ([]CustomerType, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 

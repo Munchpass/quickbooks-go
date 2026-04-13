@@ -3,6 +3,8 @@
 
 package quickbooks
 
+import "context"
+
 // CompanyInfo describes a company account.
 type CompanyInfo struct {
 	CompanyName string
@@ -27,13 +29,13 @@ type CompanyInfo struct {
 
 // FindCompanyInfo returns the QuickBooks CompanyInfo object. This is a good
 // test to check whether you're connected.
-func (c *Client) FindCompanyInfo() (*CompanyInfo, error) {
+func (c *Client) FindCompanyInfo(ctx context.Context) (*CompanyInfo, error) {
 	var resp struct {
 		CompanyInfo CompanyInfo
 		Time        Date
 	}
 
-	if err := c.get("companyinfo/"+c.realmId, &resp, nil); err != nil {
+	if err := c.get(ctx, "companyinfo/"+c.realmId, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -41,8 +43,8 @@ func (c *Client) FindCompanyInfo() (*CompanyInfo, error) {
 }
 
 // UpdateCompanyInfo updates the company info
-func (c *Client) UpdateCompanyInfo(companyInfo *CompanyInfo) (*CompanyInfo, error) {
-	existingCompanyInfo, err := c.FindCompanyInfo()
+func (c *Client) UpdateCompanyInfo(ctx context.Context, companyInfo *CompanyInfo) (*CompanyInfo, error) {
+	existingCompanyInfo, err := c.FindCompanyInfo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +65,7 @@ func (c *Client) UpdateCompanyInfo(companyInfo *CompanyInfo) (*CompanyInfo, erro
 		Time        Date
 	}
 
-	if err = c.post("companyInfo", payload, &companyInfoData, nil); err != nil {
+	if err = c.post(ctx, "companyInfo", payload, &companyInfoData, nil); err != nil {
 		return nil, err
 	}
 

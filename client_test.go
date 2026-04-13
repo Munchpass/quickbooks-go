@@ -37,7 +37,7 @@ func TestReq_429_NoRetries_ReturnsRateLimitError(t *testing.T) {
 	c := newTestClient(t, srv.URL)
 
 	var resp struct{}
-	err := c.req("GET", "reports/ProfitAndLoss", nil, &resp, nil)
+	err := c.req(context.Background(), "GET", "reports/ProfitAndLoss", nil, &resp, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -66,7 +66,7 @@ func TestReq_429_WithRetries_SucceedsOnSecondAttempt(t *testing.T) {
 	c.SetRetryDelay(10 * time.Millisecond)
 
 	var resp map[string]string
-	err := c.req("GET", "test", nil, &resp, nil)
+	err := c.req(context.Background(), "GET", "test", nil, &resp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestReq_429_WithRetries_ExhaustsRetries(t *testing.T) {
 	c.SetRetryDelay(10 * time.Millisecond)
 
 	var resp struct{}
-	err := c.req("GET", "test", nil, &resp, nil)
+	err := c.req(context.Background(), "GET", "test", nil, &resp, nil)
 
 	var rlErr *RateLimitError
 	if !errors.As(err, &rlErr) {
@@ -124,7 +124,7 @@ func TestReq_429_RetrySleepsForConfiguredDelay(t *testing.T) {
 
 	start := time.Now()
 	var resp map[string]string
-	err := c.req("GET", "test", nil, &resp, nil)
+	err := c.req(context.Background(), "GET", "test", nil, &resp, nil)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -166,7 +166,7 @@ func TestReq_429_ConcurrentRequestsNoRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			var resp map[string]string
-			_ = c.req("GET", "test", nil, &resp, nil)
+			_ = c.req(context.Background(), "GET", "test", nil, &resp, nil)
 		}()
 	}
 	wg.Wait()
@@ -223,7 +223,7 @@ func TestReq_429_ContextCancellationDuringRetry(t *testing.T) {
 
 	start := time.Now()
 	var resp struct{}
-	err := c.reqCtx(ctx, "GET", "test", nil, &resp, nil)
+	err := c.req(ctx, "GET", "test", nil, &resp, nil)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, context.DeadlineExceeded) {
@@ -249,14 +249,14 @@ func TestReq_429_ContextCancellationDuringThrottleWait(t *testing.T) {
 	c.SetRetryDelay(5 * time.Second)
 
 	// Trigger a throttle window by making one request.
-	_ = c.req("GET", "test", nil, nil, nil)
+	_ = c.req(context.Background(), "GET", "test", nil, nil, nil)
 
 	// Now a second request should block in waitForThrottle. Cancel it quickly.
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
-	err := c.reqCtx(ctx, "GET", "test", nil, nil, nil)
+	err := c.req(ctx, "GET", "test", nil, nil, nil)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, context.DeadlineExceeded) {

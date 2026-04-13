@@ -1,6 +1,7 @@
 package examples
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -23,7 +24,9 @@ func TestFindPnLReport(t *testing.T) {
 	qbClient, err := quickbooks.NewClient(clientId, clientSecret, realmId, false, "75", &token)
 	require.NoError(t, err)
 
-	resp, err := qbClient.FindPnLReport("2025-01-01", "2025-09-30")
+	ctx := context.Background()
+
+	resp, err := qbClient.FindPnLReport(ctx, "2025-01-01", "2025-09-30")
 	require.NoError(t, err)
 
 	raw, err := os.ReadFile("./profit_and_loss.json")

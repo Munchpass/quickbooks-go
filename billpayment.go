@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -39,28 +40,28 @@ type BillPaymentLine struct {
 	LinkedTxn []LinkedTxn `json:",omitempty"`
 }
 
-func (c *Client) CreateBillPayment(billPayment *BillPayment) (*BillPayment, error) {
+func (c *Client) CreateBillPayment(ctx context.Context, billPayment *BillPayment) (*BillPayment, error) {
 	var resp struct {
 		BillPayment BillPayment
 		Time        Date
 	}
 
-	if err := c.post("billpayment", billPayment, &resp, nil); err != nil {
+	if err := c.post(ctx, "billpayment", billPayment, &resp, nil); err != nil {
 		return nil, err
 	}
 
 	return &resp.BillPayment, nil
 }
 
-func (c *Client) DeleteBillPayment(billPayment *BillPayment) error {
+func (c *Client) DeleteBillPayment(ctx context.Context, billPayment *BillPayment) error {
 	if billPayment.Id == "" || billPayment.SyncToken == "" {
 		return errors.New("missing id/sync token")
 	}
 
-	return c.post("billpayment", billPayment, nil, map[string]string{"operation": "delete"})
+	return c.post(ctx, "billpayment", billPayment, nil, map[string]string{"operation": "delete"})
 }
 
-func (c *Client) FindBillPayments() ([]BillPayment, error) {
+func (c *Client) FindBillPayments(ctx context.Context) ([]BillPayment, error) {
 	var resp struct {
 		QueryResponse struct {
 			BillPayments  []BillPayment `json:"BillPayment"`
@@ -70,7 +71,7 @@ func (c *Client) FindBillPayments() ([]BillPayment, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM BillPayment", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM BillPayment", &resp); err != nil {
 		return nil, err
 	}
 
@@ -83,7 +84,7 @@ func (c *Client) FindBillPayments() ([]BillPayment, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM BillPayment ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -97,20 +98,20 @@ func (c *Client) FindBillPayments() ([]BillPayment, error) {
 	return billPayments, nil
 }
 
-func (c *Client) FindBillPaymentById(id string) (*BillPayment, error) {
+func (c *Client) FindBillPaymentById(ctx context.Context, id string) (*BillPayment, error) {
 	var resp struct {
 		BillPayment BillPayment
 		Time        Date
 	}
 
-	if err := c.get("billpayment/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "billpayment/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
 	return &resp.BillPayment, nil
 }
 
-func (c *Client) QueryBillPayments(query string) ([]BillPayment, error) {
+func (c *Client) QueryBillPayments(ctx context.Context, query string) ([]BillPayment, error) {
 	var resp struct {
 		QueryResponse struct {
 			BillPayments  []BillPayment `json:"BillPayment"`
@@ -119,7 +120,7 @@ func (c *Client) QueryBillPayments(query string) ([]BillPayment, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -130,12 +131,12 @@ func (c *Client) QueryBillPayments(query string) ([]BillPayment, error) {
 	return resp.QueryResponse.BillPayments, nil
 }
 
-func (c *Client) UpdateBillPayment(billPayment *BillPayment) (*BillPayment, error) {
+func (c *Client) UpdateBillPayment(ctx context.Context, billPayment *BillPayment) (*BillPayment, error) {
 	if billPayment.Id == "" {
 		return nil, errors.New("missing bill payment id")
 	}
 
-	existingBillPayment, err := c.FindBillPaymentById(billPayment.Id)
+	existingBillPayment, err := c.FindBillPaymentById(ctx, billPayment.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func (c *Client) UpdateBillPayment(billPayment *BillPayment) (*BillPayment, erro
 		Time        Date
 	}
 
-	if err = c.post("billpayment", payload, &billPaymentData, nil); err != nil {
+	if err = c.post(ctx, "billpayment", payload, &billPaymentData, nil); err != nil {
 		return nil, err
 	}
 

@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"errors"
 	"strconv"
 )
@@ -29,13 +30,13 @@ type Estimate struct {
 
 // CreateEstimate creates the given Estimate on the QuickBooks server, returning
 // the resulting Estimate object.
-func (c *Client) CreateEstimate(estimate *Estimate) (*Estimate, error) {
+func (c *Client) CreateEstimate(ctx context.Context, estimate *Estimate) (*Estimate, error) {
 	var resp struct {
 		Estimate Estimate
 		Time     Date
 	}
 
-	if err := c.post("estimate", estimate, &resp, nil); err != nil {
+	if err := c.post(ctx, "estimate", estimate, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -43,16 +44,16 @@ func (c *Client) CreateEstimate(estimate *Estimate) (*Estimate, error) {
 }
 
 // DeleteEstimate deletes the estimate
-func (c *Client) DeleteEstimate(estimate *Estimate) error {
+func (c *Client) DeleteEstimate(ctx context.Context, estimate *Estimate) error {
 	if estimate.Id == "" || estimate.SyncToken == "" {
 		return errors.New("missing id/sync token")
 	}
 
-	return c.post("estimate", estimate, nil, map[string]string{"operation": "delete"})
+	return c.post(ctx, "estimate", estimate, nil, map[string]string{"operation": "delete"})
 }
 
 // FindEstimates gets the full list of Estimates in the QuickBooks account.
-func (c *Client) FindEstimates() ([]Estimate, error) {
+func (c *Client) FindEstimates(ctx context.Context) ([]Estimate, error) {
 	var resp struct {
 		QueryResponse struct {
 			Estimates     []Estimate `json:"Estimate"`
@@ -62,7 +63,7 @@ func (c *Client) FindEstimates() ([]Estimate, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Estimate", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Estimate", &resp); err != nil {
 		return nil, err
 	}
 
@@ -75,7 +76,7 @@ func (c *Client) FindEstimates() ([]Estimate, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Estimate ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -90,13 +91,13 @@ func (c *Client) FindEstimates() ([]Estimate, error) {
 }
 
 // FindEstimateById finds the estimate by the given id
-func (c *Client) FindEstimateById(id string) (*Estimate, error) {
+func (c *Client) FindEstimateById(ctx context.Context, id string) (*Estimate, error) {
 	var resp struct {
 		Estimate Estimate
 		Time     Date
 	}
 
-	if err := c.get("estimate/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "estimate/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -104,7 +105,7 @@ func (c *Client) FindEstimateById(id string) (*Estimate, error) {
 }
 
 // QueryEstimates accepts an SQL query and returns all estimates found using it
-func (c *Client) QueryEstimates(query string) ([]Estimate, error) {
+func (c *Client) QueryEstimates(ctx context.Context, query string) ([]Estimate, error) {
 	var resp struct {
 		QueryResponse struct {
 			Estimates     []Estimate `json:"Estimate"`
@@ -113,7 +114,7 @@ func (c *Client) QueryEstimates(query string) ([]Estimate, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -125,23 +126,23 @@ func (c *Client) QueryEstimates(query string) ([]Estimate, error) {
 }
 
 // SendEstimate sends the estimate to the Estimate.BillEmail if emailAddress is left empty
-func (c *Client) SendEstimate(estimateId string, emailAddress string) error {
+func (c *Client) SendEstimate(ctx context.Context, estimateId string, emailAddress string) error {
 	queryParameters := make(map[string]string)
 
 	if emailAddress != "" {
 		queryParameters["sendTo"] = emailAddress
 	}
 
-	return c.post("estimate/"+estimateId+"/send", nil, nil, queryParameters)
+	return c.post(ctx, "estimate/"+estimateId+"/send", nil, nil, queryParameters)
 }
 
 // UpdateEstimate updates the estimate
-func (c *Client) UpdateEstimate(estimate *Estimate) (*Estimate, error) {
+func (c *Client) UpdateEstimate(ctx context.Context, estimate *Estimate) (*Estimate, error) {
 	if estimate.Id == "" {
 		return nil, errors.New("missing estimate id")
 	}
 
-	existingEstimate, err := c.FindEstimateById(estimate.Id)
+	existingEstimate, err := c.FindEstimateById(ctx, estimate.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -161,24 +162,24 @@ func (c *Client) UpdateEstimate(estimate *Estimate) (*Estimate, error) {
 		Time     Date
 	}
 
-	if err = c.post("estimate", payload, &estimateData, nil); err != nil {
+	if err = c.post(ctx, "estimate", payload, &estimateData, nil); err != nil {
 		return nil, err
 	}
 
 	return &estimateData.Estimate, err
 }
 
-func (c *Client) VoidEstimate(estimate Estimate) error {
+func (c *Client) VoidEstimate(ctx context.Context, estimate Estimate) error {
 	if estimate.Id == "" {
 		return errors.New("missing estimate id")
 	}
 
-	existingEstimate, err := c.FindEstimateById(estimate.Id)
+	existingEstimate, err := c.FindEstimateById(ctx, estimate.Id)
 	if err != nil {
 		return err
 	}
 
 	estimate.SyncToken = existingEstimate.SyncToken
 
-	return c.post("estimate", estimate, nil, map[string]string{"operation": "void"})
+	return c.post(ctx, "estimate", estimate, nil, map[string]string{"operation": "void"})
 }

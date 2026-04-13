@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -46,13 +47,13 @@ type Vendor struct {
 
 // CreateVendor creates the given Vendor on the QuickBooks server, returning
 // the resulting Vendor object.
-func (c *Client) CreateVendor(vendor *Vendor) (*Vendor, error) {
+func (c *Client) CreateVendor(ctx context.Context, vendor *Vendor) (*Vendor, error) {
 	var resp struct {
 		Vendor Vendor
 		Time   Date
 	}
 
-	if err := c.post("vendor", vendor, &resp, nil); err != nil {
+	if err := c.post(ctx, "vendor", vendor, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -60,7 +61,7 @@ func (c *Client) CreateVendor(vendor *Vendor) (*Vendor, error) {
 }
 
 // FindVendors gets the full list of Vendors in the QuickBooks account.
-func (c *Client) FindVendors() ([]Vendor, error) {
+func (c *Client) FindVendors(ctx context.Context) ([]Vendor, error) {
 	var resp struct {
 		QueryResponse struct {
 			Vendors       []Vendor `json:"Vendor"`
@@ -70,7 +71,7 @@ func (c *Client) FindVendors() ([]Vendor, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Vendor", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Vendor", &resp); err != nil {
 		return nil, err
 	}
 
@@ -83,7 +84,7 @@ func (c *Client) FindVendors() ([]Vendor, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Vendor ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -98,13 +99,13 @@ func (c *Client) FindVendors() ([]Vendor, error) {
 }
 
 // FindVendorById finds the vendor by the given id
-func (c *Client) FindVendorById(id string) (*Vendor, error) {
+func (c *Client) FindVendorById(ctx context.Context, id string) (*Vendor, error) {
 	var resp struct {
 		Vendor Vendor
 		Time   Date
 	}
 
-	if err := c.get("vendor/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "vendor/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -112,7 +113,7 @@ func (c *Client) FindVendorById(id string) (*Vendor, error) {
 }
 
 // QueryVendors accepts an SQL query and returns all vendors found using it
-func (c *Client) QueryVendors(query string) ([]Vendor, error) {
+func (c *Client) QueryVendors(ctx context.Context, query string) ([]Vendor, error) {
 	var resp struct {
 		QueryResponse struct {
 			Vendors       []Vendor `json:"Vendor"`
@@ -121,7 +122,7 @@ func (c *Client) QueryVendors(query string) ([]Vendor, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -133,12 +134,12 @@ func (c *Client) QueryVendors(query string) ([]Vendor, error) {
 }
 
 // UpdateVendor updates the vendor
-func (c *Client) UpdateVendor(vendor *Vendor) (*Vendor, error) {
+func (c *Client) UpdateVendor(ctx context.Context, vendor *Vendor) (*Vendor, error) {
 	if vendor.Id == "" {
 		return nil, errors.New("missing vendor id")
 	}
 
-	existingVendor, err := c.FindVendorById(vendor.Id)
+	existingVendor, err := c.FindVendorById(ctx, vendor.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +159,7 @@ func (c *Client) UpdateVendor(vendor *Vendor) (*Vendor, error) {
 		Time   Date
 	}
 
-	if err = c.post("vendor", payload, &vendorData, nil); err != nil {
+	if err = c.post(ctx, "vendor", payload, &vendorData, nil); err != nil {
 		return nil, err
 	}
 

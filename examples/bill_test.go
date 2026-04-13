@@ -2,6 +2,7 @@ package examples
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -25,7 +26,9 @@ func TestCreateBill(t *testing.T) {
 	qbClient, err := quickbooks.NewClient(clientId, clientSecret, realmId, false, "", &token)
 	require.NoError(t, err)
 
-	accs, err := qbClient.FindAccounts()
+	ctx := context.Background()
+
+	accs, err := qbClient.FindAccounts(ctx)
 	require.NoError(t, err)
 
 	var accPayableId string
@@ -42,7 +45,7 @@ func TestCreateBill(t *testing.T) {
 	require.NotEmpty(t, accPayableId)
 	require.NotEmpty(t, accExpenseId)
 
-	vendors, err := qbClient.FindVendors()
+	vendors, err := qbClient.FindVendors(ctx)
 	require.NoError(t, err)
 
 	var vendorId string
@@ -54,7 +57,7 @@ func TestCreateBill(t *testing.T) {
 	require.NotEmpty(t, vendorId)
 
 	invoiceDate := time.Date(2025, time.June, 2, 0, 0, 0, 0, time.UTC)
-	bill, err := qbClient.CreateBill(&quickbooks.Bill{
+	bill, err := qbClient.CreateBill(ctx, &quickbooks.Bill{
 		TxnDate: quickbooks.Date{Time: invoiceDate},
 		VendorRef: quickbooks.ReferenceType{
 			Value: vendorId,
@@ -87,7 +90,7 @@ func TestCreateBill(t *testing.T) {
 	// Create the attachment
 	rawData, err := os.ReadFile("test.png")
 	require.NoError(t, err)
-	attachable, err := qbClient.UploadAttachable(&quickbooks.Attachable{
+	attachable, err := qbClient.UploadAttachable(ctx, &quickbooks.Attachable{
 		FileName:    "test.png",
 		ContentType: quickbooks.PNG,
 		AttachableRef: []quickbooks.AttachableRef{
@@ -103,7 +106,7 @@ func TestCreateBill(t *testing.T) {
 	t.Logf("attachable: %+v", attachable)
 
 	// TODO: need to support creating the bill payment
-	billPayment, err := qbClient.CreateBillPayment(&quickbooks.BillPayment{
+	billPayment, err := qbClient.CreateBillPayment(ctx, &quickbooks.BillPayment{
 		PrivateNote: "Payment for bill " + bill.DocNumber,
 		VendorRef: quickbooks.ReferenceType{
 			Name:  bill.VendorRef.Name,

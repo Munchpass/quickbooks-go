@@ -4,6 +4,7 @@
 package quickbooks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -39,13 +40,13 @@ type Item struct {
 	PurchaseTaxCodeRef ReferenceType `json:",omitempty"`
 }
 
-func (c *Client) CreateItem(item *Item) (*Item, error) {
+func (c *Client) CreateItem(ctx context.Context, item *Item) (*Item, error) {
 	var resp struct {
 		Item Item
 		Time Date
 	}
 
-	if err := c.post("item", item, &resp, nil); err != nil {
+	if err := c.post(ctx, "item", item, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -53,7 +54,7 @@ func (c *Client) CreateItem(item *Item) (*Item, error) {
 }
 
 // FindItems gets the full list of Items in the QuickBooks account.
-func (c *Client) FindItems() ([]Item, error) {
+func (c *Client) FindItems(ctx context.Context) ([]Item, error) {
 	var resp struct {
 		QueryResponse struct {
 			Items         []Item `json:"Item"`
@@ -63,7 +64,7 @@ func (c *Client) FindItems() ([]Item, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Item", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Item", &resp); err != nil {
 		return nil, err
 	}
 
@@ -76,7 +77,7 @@ func (c *Client) FindItems() ([]Item, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Item ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -91,13 +92,13 @@ func (c *Client) FindItems() ([]Item, error) {
 }
 
 // FindItemById returns an item with a given Id.
-func (c *Client) FindItemById(id string) (*Item, error) {
+func (c *Client) FindItemById(ctx context.Context, id string) (*Item, error) {
 	var resp struct {
 		Item Item
 		Time Date
 	}
 
-	if err := c.get("item/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "item/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -105,7 +106,7 @@ func (c *Client) FindItemById(id string) (*Item, error) {
 }
 
 // QueryItems accepts an SQL query and returns all items found using it
-func (c *Client) QueryItems(query string) ([]Item, error) {
+func (c *Client) QueryItems(ctx context.Context, query string) ([]Item, error) {
 	var resp struct {
 		QueryResponse struct {
 			Items         []Item `json:"Item"`
@@ -114,7 +115,7 @@ func (c *Client) QueryItems(query string) ([]Item, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -126,12 +127,12 @@ func (c *Client) QueryItems(query string) ([]Item, error) {
 }
 
 // UpdateItem updates the item
-func (c *Client) UpdateItem(item *Item) (*Item, error) {
+func (c *Client) UpdateItem(ctx context.Context, item *Item) (*Item, error) {
 	if item.Id == "" {
 		return nil, errors.New("missing item id")
 	}
 
-	existingItem, err := c.FindItemById(item.Id)
+	existingItem, err := c.FindItemById(ctx, item.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +152,7 @@ func (c *Client) UpdateItem(item *Item) (*Item, error) {
 		Time Date
 	}
 
-	if err = c.post("item", payload, &itemData, nil); err != nil {
+	if err = c.post(ctx, "item", payload, &itemData, nil); err != nil {
 		return nil, err
 	}
 

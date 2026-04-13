@@ -68,13 +68,13 @@ type AttachableRef struct {
 
 // CreateAttachable creates the given Attachable on the QuickBooks server,
 // returning the resulting Attachable object.
-func (c *Client) CreateAttachable(attachable *Attachable) (*Attachable, error) {
+func (c *Client) CreateAttachable(ctx context.Context, attachable *Attachable) (*Attachable, error) {
 	var resp struct {
 		Attachable Attachable
 		Time       Date
 	}
 
-	if err := c.post("attachable", attachable, &resp, nil); err != nil {
+	if err := c.post(ctx, "attachable", attachable, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -82,16 +82,16 @@ func (c *Client) CreateAttachable(attachable *Attachable) (*Attachable, error) {
 }
 
 // DeleteAttachable deletes the attachable
-func (c *Client) DeleteAttachable(attachable *Attachable) error {
+func (c *Client) DeleteAttachable(ctx context.Context, attachable *Attachable) error {
 	if attachable.Id == "" || attachable.SyncToken == "" {
 		return errors.New("missing id/sync token")
 	}
 
-	return c.post("attachable", attachable, nil, map[string]string{"operation": "delete"})
+	return c.post(ctx, "attachable", attachable, nil, map[string]string{"operation": "delete"})
 }
 
 // DownloadAttachable downloads the attachable
-func (c *Client) DownloadAttachable(id string) (string, error) {
+func (c *Client) DownloadAttachable(ctx context.Context, id string) (string, error) {
 	endpointUrl := *c.endpoint
 	endpointUrl.Path += "download/" + id
 
@@ -99,8 +99,8 @@ func (c *Client) DownloadAttachable(id string) (string, error) {
 	urlValues.Add("minorversion", c.minorVersion)
 	endpointUrl.RawQuery = urlValues.Encode()
 
-	resp, err := c.doWithThrottle(context.Background(), func() (*http.Request, error) {
-		return http.NewRequest("GET", endpointUrl.String(), nil)
+	resp, err := c.doWithThrottle(ctx, func() (*http.Request, error) {
+		return http.NewRequestWithContext(ctx, "GET", endpointUrl.String(), nil)
 	})
 	if err != nil {
 		return "", err
@@ -120,7 +120,7 @@ func (c *Client) DownloadAttachable(id string) (string, error) {
 }
 
 // FindAttachables gets the full list of Attachables in the QuickBooks attachable.
-func (c *Client) FindAttachables() ([]Attachable, error) {
+func (c *Client) FindAttachables(ctx context.Context) ([]Attachable, error) {
 	var resp struct {
 		QueryResponse struct {
 			Attachables   []Attachable `json:"Attachable"`
@@ -130,7 +130,7 @@ func (c *Client) FindAttachables() ([]Attachable, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Attachable", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Attachable", &resp); err != nil {
 		return nil, err
 	}
 
@@ -143,7 +143,7 @@ func (c *Client) FindAttachables() ([]Attachable, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Attachable ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -158,13 +158,13 @@ func (c *Client) FindAttachables() ([]Attachable, error) {
 }
 
 // FindAttachableById finds the attachable by the given id
-func (c *Client) FindAttachableById(id string) (*Attachable, error) {
+func (c *Client) FindAttachableById(ctx context.Context, id string) (*Attachable, error) {
 	var resp struct {
 		Attachable Attachable
 		Time       Date
 	}
 
-	if err := c.get("attachable/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "attachable/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -172,7 +172,7 @@ func (c *Client) FindAttachableById(id string) (*Attachable, error) {
 }
 
 // QueryAttachables accepts an SQL query and returns all attachables found using it
-func (c *Client) QueryAttachables(query string) ([]Attachable, error) {
+func (c *Client) QueryAttachables(ctx context.Context, query string) ([]Attachable, error) {
 	var resp struct {
 		QueryResponse struct {
 			Attachables   []Attachable `json:"Attachable"`
@@ -181,7 +181,7 @@ func (c *Client) QueryAttachables(query string) ([]Attachable, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -193,12 +193,12 @@ func (c *Client) QueryAttachables(query string) ([]Attachable, error) {
 }
 
 // UpdateAttachable updates the attachable
-func (c *Client) UpdateAttachable(attachable *Attachable) (*Attachable, error) {
+func (c *Client) UpdateAttachable(ctx context.Context, attachable *Attachable) (*Attachable, error) {
 	if attachable.Id == "" {
 		return nil, errors.New("missing attachable id")
 	}
 
-	existingAttachable, err := c.FindAttachableById(attachable.Id)
+	existingAttachable, err := c.FindAttachableById(ctx, attachable.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (c *Client) UpdateAttachable(attachable *Attachable) (*Attachable, error) {
 		Time       Date
 	}
 
-	if err = c.post("attachable", payload, &attachableData, nil); err != nil {
+	if err = c.post(ctx, "attachable", payload, &attachableData, nil); err != nil {
 		return nil, err
 	}
 
@@ -226,7 +226,7 @@ func (c *Client) UpdateAttachable(attachable *Attachable) (*Attachable, error) {
 }
 
 // UploadAttachable uploads the attachable
-func (c *Client) UploadAttachable(attachable *Attachable, data io.Reader) (*Attachable, error) {
+func (c *Client) UploadAttachable(ctx context.Context, attachable *Attachable, data io.Reader) (*Attachable, error) {
 	endpointUrl := *c.endpoint
 	endpointUrl.Path += "upload"
 
@@ -275,8 +275,8 @@ func (c *Client) UploadAttachable(attachable *Attachable, data io.Reader) (*Atta
 	bodyBytes := buffer.Bytes()
 	contentType := mWriter.FormDataContentType()
 
-	resp, err := c.doWithThrottle(context.Background(), func() (*http.Request, error) {
-		r, err := http.NewRequest("POST", endpointUrl.String(), bytes.NewReader(bodyBytes))
+	resp, err := c.doWithThrottle(ctx, func() (*http.Request, error) {
+		r, err := http.NewRequestWithContext(ctx, "POST", endpointUrl.String(), bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, err
 		}

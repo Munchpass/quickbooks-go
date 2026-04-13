@@ -1,6 +1,7 @@
 package quickbooks
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -66,7 +67,7 @@ type Report struct {
 }
 
 // FindPnLReport gets the P&L report for a date range
-func (c *Client) FindPnLReport(startDate, endDate string) (*Report, error) {
+func (c *Client) FindPnLReport(ctx context.Context, startDate, endDate string) (*Report, error) {
 	if startDate == "" || endDate == "" {
 		return nil, errors.New("missing startDate or endDate")
 	}
@@ -82,7 +83,7 @@ func (c *Client) FindPnLReport(startDate, endDate string) (*Report, error) {
 	}
 
 	var resp Report
-	if err := c.get("reports/ProfitAndLoss", &resp,
+	if err := c.get(ctx, "reports/ProfitAndLoss", &resp,
 		map[string]string{"start_date": startDate, "end_date": endDate}); err != nil {
 		return nil, err
 	}

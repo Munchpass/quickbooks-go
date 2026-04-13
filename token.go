@@ -24,13 +24,13 @@ type BearerToken struct {
 
 // RefreshToken
 // Call the refresh endpoint to generate new tokens
-func (c *Client) RefreshToken(refreshToken string) (*BearerToken, error) {
+func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*BearerToken, error) {
 	client := &http.Client{}
 	urlValues := url.Values{}
 	urlValues.Set("grant_type", "refresh_token")
 	urlValues.Add("refresh_token", refreshToken)
 
-	req, err := http.NewRequest("POST", c.discoveryAPI.TokenEndpoint, bytes.NewBufferString(urlValues.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.discoveryAPI.TokenEndpoint, bytes.NewBufferString(urlValues.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (c *Client) RefreshToken(refreshToken string) (*BearerToken, error) {
 // RetrieveBearerToken
 // Method to retrieve access token (bearer token).
 // This method can only be called once
-func (c *Client) RetrieveBearerToken(authorizationCode, redirectURI string) (*BearerToken, error) {
+func (c *Client) RetrieveBearerToken(ctx context.Context, authorizationCode, redirectURI string) (*BearerToken, error) {
 	client := &http.Client{}
 	urlValues := url.Values{}
 	// set parameters
@@ -72,7 +72,7 @@ func (c *Client) RetrieveBearerToken(authorizationCode, redirectURI string) (*Be
 	urlValues.Set("grant_type", "authorization_code")
 	urlValues.Add("redirect_uri", redirectURI)
 
-	req, err := http.NewRequest("POST", c.discoveryAPI.TokenEndpoint, bytes.NewBufferString(urlValues.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.discoveryAPI.TokenEndpoint, bytes.NewBufferString(urlValues.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -104,12 +104,12 @@ func (c *Client) RetrieveBearerToken(authorizationCode, redirectURI string) (*Be
 
 // RevokeToken
 // Call the revoke endpoint to revoke tokens
-func (c *Client) RevokeToken(refreshToken string) error {
+func (c *Client) RevokeToken(ctx context.Context, refreshToken string) error {
 	client := &http.Client{}
 	urlValues := url.Values{}
 	urlValues.Add("token", refreshToken)
 
-	req, err := http.NewRequest("POST", c.discoveryAPI.RevocationEndpoint, bytes.NewBufferString(urlValues.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.discoveryAPI.RevocationEndpoint, bytes.NewBufferString(urlValues.Encode()))
 	if err != nil {
 		return err
 	}

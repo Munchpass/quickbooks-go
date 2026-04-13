@@ -1,5 +1,7 @@
 package quickbooks
 
+import "context"
+
 type EntityTypeType string
 
 const (
@@ -72,13 +74,13 @@ type JournalEntry struct {
 
 // CreateBill creates the given Bill on the QuickBooks server, returning
 // the resulting Bill object.
-func (c *Client) CreateJournalEntry(req *JournalEntry) (*JournalEntry, error) {
+func (c *Client) CreateJournalEntry(ctx context.Context, req *JournalEntry) (*JournalEntry, error) {
 	var resp struct {
 		JournalEntry JournalEntry
 		Time         Date
 	}
 
-	if err := c.post("journalentry", req, &resp, nil); err != nil {
+	if err := c.post(ctx, "journalentry", req, &resp, nil); err != nil {
 		return nil, err
 	}
 

@@ -4,6 +4,7 @@
 package quickbooks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -125,13 +126,13 @@ type DiscountLineDetail struct {
 
 // CreateInvoice creates the given Invoice on the QuickBooks server, returning
 // the resulting Invoice object.
-func (c *Client) CreateInvoice(invoice *Invoice) (*Invoice, error) {
+func (c *Client) CreateInvoice(ctx context.Context, invoice *Invoice) (*Invoice, error) {
 	var resp struct {
 		Invoice Invoice
 		Time    Date
 	}
 
-	if err := c.post("invoice", invoice, &resp, nil); err != nil {
+	if err := c.post(ctx, "invoice", invoice, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -147,16 +148,16 @@ func (c *Client) CreateInvoice(invoice *Invoice) (*Invoice, error) {
 // This is slightly horrifying and not documented in their API. When this
 // happens we just return success; the goal of deleting it has been
 // accomplished, just not by us.
-func (c *Client) DeleteInvoice(invoice *Invoice) error {
+func (c *Client) DeleteInvoice(ctx context.Context, invoice *Invoice) error {
 	if invoice.Id == "" || invoice.SyncToken == "" {
 		return errors.New("missing id/sync token")
 	}
 
-	return c.post("invoice", invoice, nil, map[string]string{"operation": "delete"})
+	return c.post(ctx, "invoice", invoice, nil, map[string]string{"operation": "delete"})
 }
 
 // FindInvoices gets the full list of Invoices in the QuickBooks account.
-func (c *Client) FindInvoices() ([]Invoice, error) {
+func (c *Client) FindInvoices(ctx context.Context) ([]Invoice, error) {
 	var resp struct {
 		QueryResponse struct {
 			Invoices      []Invoice `json:"Invoice"`
@@ -166,7 +167,7 @@ func (c *Client) FindInvoices() ([]Invoice, error) {
 		}
 	}
 
-	if err := c.query("SELECT COUNT(*) FROM Invoice", &resp); err != nil {
+	if err := c.query(ctx, "SELECT COUNT(*) FROM Invoice", &resp); err != nil {
 		return nil, err
 	}
 
@@ -179,7 +180,7 @@ func (c *Client) FindInvoices() ([]Invoice, error) {
 	for i := 0; i < resp.QueryResponse.TotalCount; i += queryPageSize {
 		query := "SELECT * FROM Invoice ORDERBY Id STARTPOSITION " + strconv.Itoa(i+1) + " MAXRESULTS " + strconv.Itoa(queryPageSize)
 
-		if err := c.query(query, &resp); err != nil {
+		if err := c.query(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 
@@ -194,13 +195,13 @@ func (c *Client) FindInvoices() ([]Invoice, error) {
 }
 
 // FindInvoiceById finds the invoice by the given id
-func (c *Client) FindInvoiceById(id string) (*Invoice, error) {
+func (c *Client) FindInvoiceById(ctx context.Context, id string) (*Invoice, error) {
 	var resp struct {
 		Invoice Invoice
 		Time    Date
 	}
 
-	if err := c.get("invoice/"+id, &resp, nil); err != nil {
+	if err := c.get(ctx, "invoice/"+id, &resp, nil); err != nil {
 		return nil, err
 	}
 
@@ -208,7 +209,7 @@ func (c *Client) FindInvoiceById(id string) (*Invoice, error) {
 }
 
 // QueryInvoices accepts an SQL query and returns all invoices found using it
-func (c *Client) QueryInvoices(query string) ([]Invoice, error) {
+func (c *Client) QueryInvoices(ctx context.Context, query string) ([]Invoice, error) {
 	var resp struct {
 		QueryResponse struct {
 			Invoices      []Invoice `json:"Invoice"`
@@ -217,7 +218,7 @@ func (c *Client) QueryInvoices(query string) ([]Invoice, error) {
 		}
 	}
 
-	if err := c.query(query, &resp); err != nil {
+	if err := c.query(ctx, query, &resp); err != nil {
 		return nil, err
 	}
 
@@ -229,23 +230,23 @@ func (c *Client) QueryInvoices(query string) ([]Invoice, error) {
 }
 
 // SendInvoice sends the invoice to the Invoice.BillEmail if emailAddress is left empty
-func (c *Client) SendInvoice(invoiceId string, emailAddress string) error {
+func (c *Client) SendInvoice(ctx context.Context, invoiceId string, emailAddress string) error {
 	queryParameters := make(map[string]string)
 
 	if emailAddress != "" {
 		queryParameters["sendTo"] = emailAddress
 	}
 
-	return c.post("invoice/"+invoiceId+"/send", nil, nil, queryParameters)
+	return c.post(ctx, "invoice/"+invoiceId+"/send", nil, nil, queryParameters)
 }
 
 // UpdateInvoice updates the invoice
-func (c *Client) UpdateInvoice(invoice *Invoice) (*Invoice, error) {
+func (c *Client) UpdateInvoice(ctx context.Context, invoice *Invoice) (*Invoice, error) {
 	if invoice.Id == "" {
 		return nil, errors.New("missing invoice id")
 	}
 
-	existingInvoice, err := c.FindInvoiceById(invoice.Id)
+	existingInvoice, err := c.FindInvoiceById(ctx, invoice.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -265,24 +266,24 @@ func (c *Client) UpdateInvoice(invoice *Invoice) (*Invoice, error) {
 		Time    Date
 	}
 
-	if err = c.post("invoice", payload, &invoiceData, nil); err != nil {
+	if err = c.post(ctx, "invoice", payload, &invoiceData, nil); err != nil {
 		return nil, err
 	}
 
 	return &invoiceData.Invoice, err
 }
 
-func (c *Client) VoidInvoice(invoice Invoice) error {
+func (c *Client) VoidInvoice(ctx context.Context, invoice Invoice) error {
 	if invoice.Id == "" {
 		return errors.New("missing invoice id")
 	}
 
-	existingInvoice, err := c.FindInvoiceById(invoice.Id)
+	existingInvoice, err := c.FindInvoiceById(ctx, invoice.Id)
 	if err != nil {
 		return err
 	}
 
 	invoice.SyncToken = existingInvoice.SyncToken
 
-	return c.post("invoice", invoice, nil, map[string]string{"operation": "void"})
+	return c.post(ctx, "invoice", invoice, nil, map[string]string{"operation": "void"})
 }

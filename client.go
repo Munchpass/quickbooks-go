@@ -195,11 +195,7 @@ func (c *Client) setThrottledUntil(t time.Time) {
 	c.throttleMu.Unlock()
 }
 
-func (c *Client) req(method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
-	return c.reqCtx(context.Background(), method, endpoint, payloadData, responseObject, queryParameters)
-}
-
-func (c *Client) reqCtx(ctx context.Context, method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
+func (c *Client) req(ctx context.Context, method string, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
 	endpointUrl := *c.endpoint
 	endpointUrl.Path += endpoint
 	urlValues := url.Values{}
@@ -314,15 +310,15 @@ func (c *Client) doWithThrottle(ctx context.Context, buildReq func() (*http.Requ
 	return nil, &RateLimitError{}
 }
 
-func (c *Client) get(endpoint string, responseObject interface{}, queryParameters map[string]string) error {
-	return c.req("GET", endpoint, nil, responseObject, queryParameters)
+func (c *Client) get(ctx context.Context, endpoint string, responseObject interface{}, queryParameters map[string]string) error {
+	return c.req(ctx, "GET", endpoint, nil, responseObject, queryParameters)
 }
 
-func (c *Client) post(endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
-	return c.req("POST", endpoint, payloadData, responseObject, queryParameters)
+func (c *Client) post(ctx context.Context, endpoint string, payloadData interface{}, responseObject interface{}, queryParameters map[string]string) error {
+	return c.req(ctx, "POST", endpoint, payloadData, responseObject, queryParameters)
 }
 
 // query makes the specified QBO `query` and unmarshals the result into `responseObject`
-func (c *Client) query(query string, responseObject interface{}) error {
-	return c.get("query", responseObject, map[string]string{"query": query})
+func (c *Client) query(ctx context.Context, queryStr string, responseObject interface{}) error {
+	return c.get(ctx, "query", responseObject, map[string]string{"query": queryStr})
 }
