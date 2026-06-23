@@ -1,0 +1,17 @@
+{
+	"Department": {
+		"FullyQualifiedName": "Store 1",
+		"domain": "QBO",
+		"Name": "Store 1",
+		"sparse": false,
+		"SubDepartment": false,
+		"MetaData": {
+			"CreateTime": "2015-03-12T11:38:53-07:00",
+			"LastUpdatedTime": "2015-03-12T11:38:53-07:00"
+		},
+		"Active": true,
+		"SyncToken": "0",
+		"Id": "1"
+	},
+	"time": "2015-03-12T11:38:53.717-07:00"
+}
