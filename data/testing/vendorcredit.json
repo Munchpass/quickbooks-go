@@ -1,0 +1,52 @@
+{
+  "VendorCredit": {
+    "SyncToken": "0",
+    "domain": "QBO",
+    "APAccountRef": {
+      "name": "Accounts Payable (A/P)",
+      "value": "33"
+    },
+    "VendorRef": {
+      "name": "Bob's Burger Joint",
+      "value": "56"
+    },
+    "TxnDate": "2015-07-27",
+    "TotalAmt": 100.00,
+    "CurrencyRef": {
+      "name": "United States Dollar",
+      "value": "USD"
+    },
+    "DocNumber": "CM-9",
+    "PrivateNote": "Returned pallet",
+    "sparse": false,
+    "Line": [
+      {
+        "DetailType": "AccountBasedExpenseLineDetail",
+        "Amount": 100.00,
+        "Id": "1",
+        "AccountBasedExpenseLineDetail": {
+          "TaxCodeRef": {
+            "value": "NON"
+          },
+          "AccountRef": {
+            "name": "Job Expenses:Job Materials:Decks and Patios",
+            "value": "64"
+          },
+          "BillableStatus": "NotBillable",
+          "ClassRef": {
+            "name": "Commissary",
+            "value": "5000000000000123456"
+          }
+        },
+        "Description": "Spoiled delivery"
+      }
+    ],
+    "Balance": 100,
+    "Id": "197",
+    "MetaData": {
+      "CreateTime": "2015-07-27T10:37:26-07:00",
+      "LastUpdatedTime": "2015-07-27T10:37:26-07:00"
+    }
+  },
+  "time": "2015-07-27T10:37:26.46-07:00"
+}
