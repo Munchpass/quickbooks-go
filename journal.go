@@ -86,3 +86,24 @@ func (c *Client) CreateJournalEntry(ctx context.Context, req *JournalEntry) (*Jo
 
 	return &resp.JournalEntry, nil
 }
+
+// QueryJournalEntries runs a QuickBooks query on JournalEntry (for example
+// "SELECT * FROM JournalEntry WHERE TxnDate >= '2026-09-01' STARTPOSITION 1
+// MAXRESULTS 1000") and returns what it finds. No match is an empty slice, not
+// an error. QuickBooks returns at most 1000 entries per query: page with
+// STARTPOSITION.
+func (c *Client) QueryJournalEntries(ctx context.Context, query string) ([]JournalEntry, error) {
+	var resp struct {
+		QueryResponse struct {
+			JournalEntries []JournalEntry `json:"JournalEntry"`
+		}
+	}
+
+	if err := c.query(ctx, query, &resp); err != nil {
+		return nil, err
+	}
+	if resp.QueryResponse.JournalEntries == nil {
+		return []JournalEntry{}, nil
+	}
+	return resp.QueryResponse.JournalEntries, nil
+}

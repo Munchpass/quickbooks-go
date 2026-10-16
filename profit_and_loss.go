@@ -159,57 +159,53 @@ func (c *Client) findPnLReport(ctx context.Context, endpoint string, params PnLR
 }
 
 func (p PnLReportParams) query() (map[string]string, error) {
-	if p.StartDate == "" || p.EndDate == "" {
+	return reportQuery("PnLReportParams", p.StartDate, p.EndDate, p.AccountingMethod, map[string]string{
+		"summarize_column_by": string(p.SummarizeColumnBy),
+		"department":          strings.Join(p.DepartmentIds, ","),
+		"class":               strings.Join(p.ClassIds, ","),
+		"customer":            strings.Join(p.CustomerIds, ","),
+		"vendor":              strings.Join(p.VendorIds, ","),
+		"item":                strings.Join(p.ItemIds, ","),
+		"columns":             strings.Join(p.Columns, ","),
+	}, p.Extra)
+}
+
+// reportQuery builds a report request's query: the date range and accounting
+// method every report takes, then each of the params type's own fields that is
+// set, then its Extra. An empty field sends nothing (an empty filter would drop
+// untagged lines). Extra may not repeat a parameter the type sets itself or the
+// minor version the client always sends.
+func reportQuery(paramsType, startDate, endDate string, method AccountingMethod, fields, extra map[string]string) (map[string]string, error) {
+	if startDate == "" || endDate == "" {
 		return nil, errors.New("missing startDate or endDate")
 	}
-	if _, err := time.Parse(time.DateOnly, p.StartDate); err != nil {
+	if _, err := time.Parse(time.DateOnly, startDate); err != nil {
 		return nil, errors.New("startDate must be in YYYY-MM-DD format")
 	}
-	if _, err := time.Parse(time.DateOnly, p.EndDate); err != nil {
+	if _, err := time.Parse(time.DateOnly, endDate); err != nil {
 		return nil, errors.New("endDate must be in YYYY-MM-DD format")
 	}
-	switch p.AccountingMethod {
+	switch method {
 	case "", AccountingMethodCash, AccountingMethodAccrual:
 	default:
 		return nil, fmt.Errorf("accountingMethod must be %q or %q", AccountingMethodCash, AccountingMethodAccrual)
 	}
 
-	query := map[string]string{"start_date": p.StartDate, "end_date": p.EndDate}
-	setIfAny := func(key, value string) {
+	query := map[string]string{"start_date": startDate, "end_date": endDate}
+	if method != "" {
+		query["accounting_method"] = string(method)
+	}
+	for key, value := range fields {
 		if value != "" {
 			query[key] = value
 		}
 	}
-	setIfAny("accounting_method", string(p.AccountingMethod))
-	setIfAny("summarize_column_by", string(p.SummarizeColumnBy))
-	setIfAny("department", strings.Join(p.DepartmentIds, ","))
-	setIfAny("class", strings.Join(p.ClassIds, ","))
-	setIfAny("customer", strings.Join(p.CustomerIds, ","))
-	setIfAny("vendor", strings.Join(p.VendorIds, ","))
-	setIfAny("item", strings.Join(p.ItemIds, ","))
-	setIfAny("columns", strings.Join(p.Columns, ","))
-
-	for key, value := range p.Extra {
-		if _, typed := pnlReportTypedParams[key]; typed {
-			return nil, fmt.Errorf("extra parameter %q has a PnLReportParams field; set that instead", key)
+	for key, value := range extra {
+		_, typed := fields[key]
+		if typed || key == "start_date" || key == "end_date" || key == "accounting_method" || key == "minorversion" {
+			return nil, fmt.Errorf("extra parameter %q has a %s field; set that instead", key, paramsType)
 		}
 		query[key] = value
 	}
 	return query, nil
-}
-
-// pnlReportTypedParams are the parameters PnLReportParams sets itself, plus
-// the minor version the client always sends.
-var pnlReportTypedParams = map[string]struct{}{
-	"start_date":          {},
-	"end_date":            {},
-	"accounting_method":   {},
-	"summarize_column_by": {},
-	"department":          {},
-	"class":               {},
-	"customer":            {},
-	"vendor":              {},
-	"item":                {},
-	"columns":             {},
-	"minorversion":        {},
 }
